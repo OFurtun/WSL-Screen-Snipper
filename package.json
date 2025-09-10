@@ -1,0 +1,94 @@
+{
+  "name": "wsl-screen-snipper",
+  "displayName": "WSL Screen Snipper",
+  "description": "Bridge Windows screenshots to WSL terminal with smart clipboard integration. Auto-detects Windows screenshots, copies to WSL, and enables seamless copy-paste workflow in terminal. Works with VS Code CLI extensions like Claude Code.",
+  "version": "1.0.0",
+  "publisher": "OFurtun",
+  "icon": "icon.svg",
+  "engines": {
+    "vscode": "^1.60.0"
+  },
+  "categories": ["Other"],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "wslScreenSnipper.saveImage",
+        "title": "Save Clipboard Image"
+      },
+      {
+        "command": "wslScreenSnipper.interceptPaste",
+        "title": "Paste (Intercept Screenshots)"
+      },
+      {
+        "command": "wslScreenSnipper.revertToDefaults",
+        "title": "WSL Screen Snipper: Revert to Default Settings"
+      }
+    ],
+    "keybindings": [
+      {
+        "command": "wslScreenSnipper.interceptPaste",
+        "key": "ctrl+shift+v",
+        "when": "terminalFocus"
+      }
+    ],
+    "configuration": {
+      "title": "WSL Screen Snipper",
+      "properties": {
+        "wslScreenSnipper.windowsUsername": {
+          "type": "string",
+          "markdownDescription": "**Windows Username**\n\nYour Windows username for locating screenshots at `/mnt/c/Users/{username}/Pictures/Screenshots`\n\n*Leave empty to use custom path below*",
+          "order": 10
+        },
+        "wslScreenSnipper.customWindowsPath": {
+          "type": "string",
+          "markdownDescription": "**Custom Windows Screenshots Path** *(optional)*\n\nFull path to Windows Screenshots folder. Only used if username above is empty.\n\n*Example:* `/mnt/c/Users/john/Documents/MyScreenshots`",
+          "order": 20
+        },
+        "wslScreenSnipper.tempFolderName": {
+          "type": "string",
+          "default": "Temp-Session-Snips",
+          "markdownDescription": "**Temp Folder Name**\n\nCreates hidden folder `.{name}` in workspace root\n\n*Leave empty to use custom path below*",
+          "order": 30
+        },
+        "wslScreenSnipper.customTempPath": {
+          "type": "string",
+          "markdownDescription": "**Custom Temp Path** *(optional)*\n\nFull path for temp directory. Only used if folder name above is empty.\n\n*Example:* `/tmp/screenshots`",
+          "order": 40
+        },
+        "wslScreenSnipper.autoCleanup": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "**Auto Cleanup**\n\nRemove entire temp directory when VS Code closes",
+          "order": 50
+        },
+        "wslScreenSnipper.addToGitignore": {
+          "type": "boolean",
+          "default": false,
+          "markdownDescription": "**Add to .gitignore**\n\nAdd temp folder to `.gitignore` (workspace folders only)",
+          "order": 60
+        },
+        "wslScreenSnipper.pollingInterval": {
+          "type": "number",
+          "default": 500,
+          "minimum": 100,
+          "maximum": 5000,
+          "markdownDescription": "**Polling Interval (ms)**\n\nHow often to check for new screenshots (100-5000ms). Lower values = faster detection but more CPU usage",
+          "order": 70
+        }
+      }
+    }
+  },
+  "scripts": {
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./"
+  },
+  "devDependencies": {
+    "@types/vscode": "^1.60.0",
+    "@types/node": "^16.x",
+    "typescript": "^4.4.4"
+  }
+}
