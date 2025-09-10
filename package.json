@@ -1,9 +1,10 @@
 {
   "name": "wsl-screen-snipper",
   "displayName": "WSL Screen Snipper",
-  "description": "Automatically detect Windows screenshots and copy them to WSL with seamless terminal integration. Commands: 'Save Clipboard Image' (manual), 'Revert to Default Settings' (reset).",
+  "description": "Bridge Windows screenshots to WSL terminal with smart clipboard integration. Auto-detects Windows screenshots, copies to WSL, and enables seamless copy-paste workflow in terminal. Works with VS Code CLI extensions like Claude Code.",
   "version": "1.0.0",
   "publisher": "OFurtun",
+  "icon": "icon.svg",
   "engines": {
     "vscode": "^1.60.0"
   },
