@@ -1,0 +1,20 @@
+# Compiled output
+out/
+*.js
+*.js.map
+
+# Dependencies
+node_modules/
+
+# Package lock files
+package-lock.json
+
+# VS Code
+.vscode/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
