@@ -103,6 +103,14 @@ export function activate(context: vscode.ExtensionContext) {
             cleanup();
         }
     });
+
+    // Additional cleanup hooks for various termination scenarios
+    process.on('SIGTERM', cleanup);
+    process.on('SIGINT', cleanup);
+    process.on('beforeExit', cleanup);
+    
+    // Store cleanup reference for forced cleanup
+    (global as any).wslScreenSnipperCleanup = cleanup;
 }
 
 async function setupScreenshotDirectory() {
@@ -306,14 +314,36 @@ async function copyScreenshotToWSL(sourceFile: string): Promise<string | undefin
 
 function copyToClipboard(text: string): void {
     try {
-        // Use clip.exe directly for maximum speed (fire-and-forget)
-        const clipProcess = spawn('clip.exe');
+        // Use clip.exe with proper cleanup
+        const clipProcess = spawn('clip.exe', { 
+            stdio: ['pipe', 'pipe', 'pipe'],
+            detached: false 
+        });
+        
+        // Ensure process cleanup
+        clipProcess.on('error', (error) => {
+            console.error('clip.exe process error:', error);
+        });
+        
+        clipProcess.on('exit', (code) => {
+            console.log(`clip.exe exited with code: ${code}`);
+        });
+        
         clipProcess.stdin.write(text);
         clipProcess.stdin.end();
+        
+        // Store reference for cleanup
+        disposables.push({
+            dispose: () => {
+                if (!clipProcess.killed) {
+                    clipProcess.kill();
+                }
+            }
+        });
+        
         console.log(`Copied to clipboard: ${text}`);
     } catch (error) {
         console.error('Failed to copy to clipboard:', error);
-        // Don't fallback to VS Code API as it's slower - just log the error
     }
 }
 
@@ -465,36 +495,80 @@ function registerPasteInterceptor(context: vscode.ExtensionContext) {
 
 
 function cleanup() {
+    console.log('Starting extension cleanup...');
+    
     // Stop file monitoring
     if (fileWatcher) {
-        fileWatcher.close();
-        fileWatcher = undefined;
+        try {
+            fileWatcher.close();
+            fileWatcher = undefined;
+            console.log('File watcher closed');
+        } catch (error) {
+            console.error('Error closing file watcher:', error);
+        }
     }
 
     // Stop polling
     if (pollingInterval) {
-        clearInterval(pollingInterval);
-        pollingInterval = undefined;
+        try {
+            clearInterval(pollingInterval);
+            pollingInterval = undefined;
+            console.log('Polling interval cleared');
+        } catch (error) {
+            console.error('Error clearing polling interval:', error);
+        }
+    }
+
+    // Dispose all registered disposables
+    try {
+        disposables.forEach((disposable, index) => {
+            try {
+                disposable.dispose();
+                console.log(`Disposed disposable ${index}`);
+            } catch (error) {
+                console.error(`Error disposing disposable ${index}:`, error);
+            }
+        });
+        disposables = [];
+        console.log('All disposables cleaned up');
+    } catch (error) {
+        console.error('Error during disposable cleanup:', error);
     }
 
     // Clear processed files set
     processedFiles.clear();
+    console.log('Processed files cleared');
 
+    // Clean up temp directory
     const config = vscode.workspace.getConfiguration('wslScreenSnipper');
     const autoCleanup = config.get<boolean>('autoCleanup', true);
     
     if (autoCleanup && screenshotDir && fs.existsSync(screenshotDir)) {
         try {
-            // Remove the entire directory and all its contents
-            fs.rmSync(screenshotDir, { recursive: true, force: true });
-            console.log(`Cleaned up and removed screenshot directory: ${screenshotDir}`);
+            // Force close any open file handles by waiting briefly
+            setTimeout(() => {
+                try {
+                    fs.rmSync(screenshotDir!, { recursive: true, force: true });
+                    console.log(`Cleaned up and removed screenshot directory: ${screenshotDir}`);
+                } catch (error) {
+                    console.error('Failed to cleanup screenshot directory:', error);
+                }
+            }, 100);
         } catch (error) {
-            console.error('Failed to cleanup screenshot directory:', error);
+            console.error('Failed to schedule cleanup of screenshot directory:', error);
         }
     }
+    
+    // Reset global variables
+    screenshotDir = undefined;
+    lastSavedImagePath = undefined;
+    lastScreenshotCheck = 0;
+    
+    console.log('Extension cleanup completed');
 }
 
 export function deactivate() {
+    console.log('Extension deactivating...');
     cleanup();
-    disposables.forEach(d => d.dispose());
+    console.log('Extension deactivated');
 }

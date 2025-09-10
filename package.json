@@ -4,7 +4,6 @@
   "description": "Bridge Windows screenshots to WSL terminal with smart clipboard integration. Auto-detects Windows screenshots, copies to WSL, and enables seamless copy-paste workflow in terminal. Works with VS Code CLI extensions like Claude Code.",
   "version": "1.0.0",
   "publisher": "OFurtun",
-  "icon": "icon.svg",
   "engines": {
     "vscode": "^1.60.0"
   },
@@ -84,7 +83,8 @@
   },
   "scripts": {
     "compile": "tsc -p ./",
-    "watch": "tsc -watch -p ./"
+    "watch": "tsc -watch -p ./",
+    "preuninstall": "node -e \"if(global.wslScreenSnipperCleanup) global.wslScreenSnipperCleanup();\""
   },
   "devDependencies": {
     "@types/vscode": "^1.60.0",
