@@ -61,9 +61,28 @@ This locates screenshots at `/mnt/c/Users/{username}/Pictures/Screenshots`
 
 ## Installation
 
+### From VS Code Extensions Marketplace
 1. Install from VS Code Extensions marketplace
 2. Configure your Windows username in settings
 3. Start taking screenshots - they'll be automatically available in WSL!
+
+### From Source (Development)
+```bash
+# Clone the repository
+git clone https://github.com/OFurtun/WSL-Screen-Snipper.git
+cd WSL-Screen-Snipper
+
+# Install dependencies and compile
+npm install
+npm run compile
+
+# Package the extension
+npm install -g @vscode/vsce
+vsce package
+
+# Install the generated .vsix file
+code --install-extension wsl-screen-snipper-1.0.0.vsix
+```
 
 ## Troubleshooting
 
