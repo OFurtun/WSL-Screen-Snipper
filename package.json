@@ -27,13 +27,7 @@
         "title": "WSL Screen Snipper: Revert to Default Settings"
       }
     ],
-    "keybindings": [
-      {
-        "command": "wslScreenSnipper.interceptPaste",
-        "key": "ctrl+v",
-        "when": "terminalFocus"
-      }
-    ],
+    "keybindings": [],
     "configuration": {
       "title": "WSL Screen Snipper",
       "properties": {
