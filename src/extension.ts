@@ -1,7 +1,6 @@
 import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as path from 'path';
-import { spawn } from 'child_process';
 
 let screenshotDir: string | undefined;
 let disposables: vscode.Disposable[] = [];
@@ -313,38 +312,10 @@ async function copyScreenshotToWSL(sourceFile: string): Promise<string | undefin
 }
 
 function copyToClipboard(text: string): void {
-    try {
-        // Use clip.exe with proper cleanup
-        const clipProcess = spawn('clip.exe', { 
-            stdio: ['pipe', 'pipe', 'pipe'],
-            detached: false 
-        });
-        
-        // Ensure process cleanup
-        clipProcess.on('error', (error) => {
-            console.error('clip.exe process error:', error);
-        });
-        
-        clipProcess.on('exit', (code) => {
-            console.log(`clip.exe exited with code: ${code}`);
-        });
-        
-        clipProcess.stdin.write(text);
-        clipProcess.stdin.end();
-        
-        // Store reference for cleanup
-        disposables.push({
-            dispose: () => {
-                if (!clipProcess.killed) {
-                    clipProcess.kill();
-                }
-            }
-        });
-        
-        console.log(`Copied to clipboard: ${text}`);
-    } catch (error) {
-        console.error('Failed to copy to clipboard:', error);
-    }
+    vscode.env.clipboard.writeText(text).then(
+        () => console.log(`Copied to clipboard: ${text}`),
+        (error) => console.error('Failed to copy to clipboard:', error)
+    );
 }
 
 function startFileMonitoring(): boolean {
