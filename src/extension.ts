@@ -299,10 +299,15 @@ async function copyScreenshotToWSL(sourceFile: string): Promise<string | undefin
         
         // Copy file from Windows to WSL
         fs.copyFileSync(sourceFile, targetPath);
-        
-        // Copy WSL path to clipboard for easy pasting
+
+        // Auto-paste into active terminal if one is open
+        if (vscode.window.activeTerminal) {
+            vscode.window.activeTerminal.sendText(targetPath, false);
+        }
+
+        // Also copy to clipboard as fallback
         copyToClipboard(targetPath);
-        
+
         vscode.window.showInformationMessage(`Screenshot copied: ${fileName}`);
         return targetPath;
     } catch (error) {
