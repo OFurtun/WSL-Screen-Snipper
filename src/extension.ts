@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as path from 'path';
+import { spawn } from 'child_process';
 
 let screenshotDir: string | undefined;
 let disposables: vscode.Disposable[] = [];
@@ -312,10 +313,15 @@ async function copyScreenshotToWSL(sourceFile: string): Promise<string | undefin
 }
 
 function copyToClipboard(text: string): void {
-    vscode.env.clipboard.writeText(text).then(
-        () => console.log(`Copied to clipboard: ${text}`),
-        (error) => console.error('Failed to copy to clipboard:', error)
-    );
+    // Use clip.exe directly — most reliable way to set the Windows clipboard from WSL.
+    // Intentionally NOT added to disposables so it is never killed prematurely.
+    const proc = spawn('clip.exe', [], { stdio: ['pipe', 'ignore', 'ignore'] });
+    proc.stdin.end(text, 'utf8');
+    proc.on('error', (err) => {
+        console.error('clip.exe error, falling back to vscode clipboard:', err);
+        vscode.env.clipboard.writeText(text);
+    });
+    console.log(`Copying to clipboard: ${text}`);
 }
 
 function startFileMonitoring(): boolean {
