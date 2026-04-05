@@ -30,7 +30,7 @@
     "keybindings": [
       {
         "command": "wslScreenSnipper.interceptPaste",
-        "key": "ctrl+shift+v",
+        "key": "ctrl+v",
         "when": "terminalFocus"
       }
     ],
