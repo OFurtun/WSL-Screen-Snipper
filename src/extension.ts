@@ -1,7 +1,6 @@
 import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as path from 'path';
-import { spawnSync } from 'child_process';
 
 let screenshotDir: string | undefined;
 let disposables: vscode.Disposable[] = [];
@@ -313,15 +312,10 @@ async function copyScreenshotToWSL(sourceFile: string): Promise<string | undefin
 }
 
 function copyToClipboard(text: string): void {
-    // spawnSync is synchronous — clip.exe finishes before returning,
-    // so the Windows clipboard is guaranteed to be updated.
-    const result = spawnSync('clip.exe', [], { input: text, encoding: 'utf8' });
-    if (result.error) {
-        console.error('clip.exe failed, falling back to vscode clipboard:', result.error);
-        vscode.env.clipboard.writeText(text);
-    } else {
-        console.log(`Copied to clipboard: ${text}`);
-    }
+    vscode.env.clipboard.writeText(text).then(
+        () => console.log(`Copied to clipboard: ${text}`),
+        (error) => console.error('Failed to copy to clipboard:', error)
+    );
 }
 
 function startFileMonitoring(): boolean {
