@@ -449,14 +449,13 @@ function registerPasteInterceptor(context: vscode.ExtensionContext) {
     const pasteCommand = vscode.commands.registerCommand('wslScreenSnipper.interceptPaste', async () => {
         console.log(`Paste interceptor triggered. lastSavedImagePath: ${lastSavedImagePath}, activeTerminal: ${!!vscode.window.activeTerminal}`);
         
-        if (lastSavedImagePath && vscode.window.activeTerminal) {
+        const terminal = vscode.window.activeTerminal ?? vscode.window.terminals[0];
+        if (lastSavedImagePath && terminal) {
             console.log(`Sending WSL path to terminal: ${lastSavedImagePath}`);
-            // Send the WSL path to terminal instead of clipboard content
-            vscode.window.activeTerminal.sendText(lastSavedImagePath, false);
-            vscode.window.showInformationMessage(`Pasted screenshot path: ${path.basename(lastSavedImagePath)}`);
+            terminal.sendText(lastSavedImagePath, false);
+            vscode.window.showInformationMessage(`Pasted: ${lastSavedImagePath}`);
         } else {
-            console.log('Falling back to normal paste');
-            // Fallback to normal paste
+            console.log(`Falling back to normal paste. lastSavedImagePath=${lastSavedImagePath}, terminals=${vscode.window.terminals.length}`);
             await vscode.commands.executeCommand('workbench.action.terminal.paste');
         }
     });
