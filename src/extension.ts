@@ -304,18 +304,15 @@ async function copyScreenshotToWSL(sourceFile: string): Promise<string | undefin
         // Copy WSL path to clipboard for easy pasting
         copyToClipboard(targetPath);
 
-        // Show notification with an action button to insert path into terminal
+        // Show notification with action button to paste path into terminal
         vscode.window.showInformationMessage(
             `Screenshot ready: ${fileName}`,
-            'Insert into Terminal'
-        ).then(selection => {
-            if (selection === 'Insert into Terminal') {
-                const terminal = vscode.window.activeTerminal ?? vscode.window.terminals[0];
-                if (terminal) {
-                    terminal.sendText(targetPath, false);
-                } else {
-                    vscode.window.showWarningMessage('No terminal open to insert path into.');
-                }
+            'Paste into Terminal'
+        ).then(async selection => {
+            if (selection === 'Paste into Terminal') {
+                // Set clipboard then immediately trigger terminal paste
+                await vscode.env.clipboard.writeText(targetPath);
+                await vscode.commands.executeCommand('workbench.action.terminal.paste');
             }
         });
 
