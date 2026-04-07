@@ -1,0 +1,7 @@
+src/**
+node_modules/**
+.gitignore
+tsconfig.json
+*.vsix
+out/extension-simple-backup.*
+src/extension-simple-backup.ts
