@@ -19,10 +19,6 @@
         "title": "Save Clipboard Image"
       },
       {
-        "command": "wslScreenSnipper.interceptPaste",
-        "title": "Paste (Intercept Screenshots)"
-      },
-      {
         "command": "wslScreenSnipper.revertToDefaults",
         "title": "WSL Screen Snipper: Revert to Default Settings"
       }

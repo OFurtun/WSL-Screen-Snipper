@@ -1,15 +1,12 @@
 import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as path from 'path';
-import { spawn } from 'child_process';
 
 let screenshotDir: string | undefined;
 let disposables: vscode.Disposable[] = [];
 let fileWatcher: fs.FSWatcher | undefined;
-let lastSavedImagePath: string | undefined;
-let processedFiles: Set<string> = new Set();
+let knownFiles: Set<string> = new Set();
 let pollingInterval: NodeJS.Timeout | undefined;
-let lastScreenshotCheck: number = 0;
 
 export function activate(context: vscode.ExtensionContext) {
     console.log('WSL Screen Snipper extension activated');
@@ -59,43 +56,19 @@ export function activate(context: vscode.ExtensionContext) {
     disposables.push(revertToDefaultsCommand);
     context.subscriptions.push(revertToDefaultsCommand);
 
-    // Setup screenshot directory and start monitoring
-    let setupSuccess = false;
-    let monitoringSuccess = false;
-    
-    setupScreenshotDirectory().then(() => {
-        console.log('Screenshot directory setup completed');
-        setupSuccess = true;
-        checkAndShowStatus();
-    }).catch((error) => {
-        console.error('Failed to setup screenshot directory:', error);
-        vscode.window.showErrorMessage(`WSL Screen Snipper: Failed to setup screenshot directory - ${error}`);
-    });
+    // Initial setup
+    initializeMonitoring();
 
-    // Start file monitoring for Windows screenshots
-    try {
-        const result = startFileMonitoring();
-        if (result) {
-            console.log('File monitoring started successfully');
-            monitoringSuccess = true;
-            checkAndShowStatus();
-        } else {
-            console.log('File monitoring setup failed');
-            vscode.window.showWarningMessage('WSL Screen Snipper: File monitoring could not start - check Screenshots directory');
-        }
-    } catch (error) {
-        console.error('Failed to start file monitoring:', error);
-        vscode.window.showErrorMessage(`WSL Screen Snipper: Failed to start file monitoring - ${error}`);
-    }
-    
-    function checkAndShowStatus() {
-        if (setupSuccess && monitoringSuccess) {
-            vscode.window.showInformationMessage('WSL Screen Snipper: Ready! Screenshot monitoring active');
-        }
-    }
-
-    // Register terminal paste interceptor
-    registerPasteInterceptor(context);
+    // Re-initialize when settings change (no reload required)
+    context.subscriptions.push(
+        vscode.workspace.onDidChangeConfiguration(e => {
+            if (e.affectsConfiguration('wslScreenSnipper')) {
+                console.log('Settings changed, reinitializing...');
+                stopMonitoring();
+                initializeMonitoring();
+            }
+        })
+    );
 
     // Setup cleanup on deactivation
     context.subscriptions.push({
@@ -111,6 +84,49 @@ export function activate(context: vscode.ExtensionContext) {
     
     // Store cleanup reference for forced cleanup
     (global as any).wslScreenSnipperCleanup = cleanup;
+}
+
+function initializeMonitoring() {
+    let setupSuccess = false;
+    let monitoringSuccess = false;
+
+    setupScreenshotDirectory().then(() => {
+        console.log('Screenshot directory setup completed');
+        setupSuccess = true;
+        if (setupSuccess && monitoringSuccess) {
+            vscode.window.showInformationMessage('WSL Screen Snipper: Ready! Screenshot monitoring active');
+        }
+    }).catch((error) => {
+        console.error('Failed to setup screenshot directory:', error);
+        vscode.window.showErrorMessage(`WSL Screen Snipper: Failed to setup screenshot directory - ${error}`);
+    });
+
+    try {
+        if (startFileMonitoring()) {
+            console.log('File monitoring started successfully');
+            monitoringSuccess = true;
+            if (setupSuccess && monitoringSuccess) {
+                vscode.window.showInformationMessage('WSL Screen Snipper: Ready! Screenshot monitoring active');
+            }
+        } else {
+            vscode.window.showWarningMessage('WSL Screen Snipper: File monitoring could not start - check Screenshots directory');
+        }
+    } catch (error) {
+        console.error('Failed to start file monitoring:', error);
+        vscode.window.showErrorMessage(`WSL Screen Snipper: Failed to start file monitoring - ${error}`);
+    }
+}
+
+function stopMonitoring() {
+    if (fileWatcher) {
+        fileWatcher.close();
+        fileWatcher = undefined;
+    }
+    if (pollingInterval) {
+        clearInterval(pollingInterval);
+        pollingInterval = undefined;
+    }
+    knownFiles.clear();
 }
 
 async function setupScreenshotDirectory() {
@@ -297,24 +313,15 @@ async function copyScreenshotToWSL(sourceFile: string): Promise<string | undefin
     try {
         const fileName = path.basename(sourceFile);
         const targetPath = path.join(screenshotDir, fileName);
-        
+
         // Copy file from Windows to WSL
         fs.copyFileSync(sourceFile, targetPath);
 
-        // Copy WSL path to clipboard for easy pasting
-        copyToClipboard(targetPath);
+        // Await clipboard write so notification means "ready to paste"
+        await vscode.env.clipboard.writeText(targetPath);
+        console.log(`Clipboard set: ${targetPath}`);
 
-        // Show notification with action button to paste path into terminal
-        vscode.window.showInformationMessage(
-            `Screenshot ready: ${fileName}`,
-            'Paste into Terminal'
-        ).then(async selection => {
-            if (selection === 'Paste into Terminal') {
-                // Set clipboard then immediately trigger terminal paste
-                await vscode.env.clipboard.writeText(targetPath);
-                await vscode.commands.executeCommand('workbench.action.terminal.paste');
-            }
-        });
+        vscode.window.showInformationMessage(`Screenshot ready: ${fileName} — Ctrl+V to paste path`);
 
         return targetPath;
     } catch (error) {
@@ -323,107 +330,65 @@ async function copyScreenshotToWSL(sourceFile: string): Promise<string | undefin
     }
 }
 
-function copyToClipboard(text: string): void {
-    // Use clip.exe directly — most reliable way to set the Windows clipboard from WSL.
-    // Intentionally NOT added to disposables so it is never killed prematurely.
-    const proc = spawn('clip.exe', [], { stdio: ['pipe', 'ignore', 'ignore'] });
-    proc.stdin.end(text, 'utf8');
-    proc.on('error', (err) => {
-        console.error('clip.exe error, falling back to vscode clipboard:', err);
-        vscode.env.clipboard.writeText(text);
-    });
-    console.log(`Copying to clipboard: ${text}`);
-}
 
 function startFileMonitoring(): boolean {
     const windowsScreenshotsPath = getWindowsScreenshotsPath();
-    
-    // Check if path was configured
+
     if (!windowsScreenshotsPath) {
         console.error('Windows Screenshots path not configured');
         return false;
     }
-    
-    // Check if directory exists
+
     if (!fs.existsSync(windowsScreenshotsPath)) {
         console.error(`Windows Screenshots directory not found: ${windowsScreenshotsPath}`);
         vscode.window.showErrorMessage(`Screenshots directory not found: ${windowsScreenshotsPath}. Please check your Windows username setting.`);
         return false;
     }
 
-    // Initialize last check time
-    lastScreenshotCheck = Date.now();
+    // Snapshot existing filenames so we only detect NEW screenshots
+    knownFiles = new Set(
+        fs.readdirSync(windowsScreenshotsPath)
+            .filter(f => /\.(png|jpe?g)$/i.test(f))
+    );
+    console.log(`Snapshotted ${knownFiles.size} existing screenshots`);
 
     try {
-        // Primary: Try fs.watch (may not work reliably with WSL)
         fileWatcher = fs.watch(windowsScreenshotsPath, async (eventType, filename) => {
-            if (eventType === 'rename' && filename && (filename.endsWith('.png') || filename.endsWith('.jpg') || filename.endsWith('.jpeg'))) {
+            if (filename && /\.(png|jpe?g)$/i.test(filename) && !knownFiles.has(filename)) {
+                knownFiles.add(filename);
                 const fullPath = path.join(windowsScreenshotsPath, filename);
-                
                 // Small delay to ensure file is fully written
-                setTimeout(async () => {
-                    await handleNewScreenshot(fullPath);
-                }, 1000);
+                setTimeout(() => handleNewScreenshot(fullPath), 500);
             }
         });
-        
-        console.log(`Primary monitoring (fs.watch) started for: ${windowsScreenshotsPath}`);
+        console.log(`fs.watch started for: ${windowsScreenshotsPath}`);
     } catch (error) {
         console.warn(`fs.watch failed: ${error}`);
     }
 
-    // Fallback: Polling-based monitoring for better WSL compatibility
+    // Polling fallback — single readdirSync per cycle, no stat calls
     const config = vscode.workspace.getConfiguration('wslScreenSnipper');
     const pollingMs = config.get<number>('pollingInterval', 500);
-    
+
     pollingInterval = setInterval(async () => {
         await checkForNewScreenshots(windowsScreenshotsPath);
     }, pollingMs);
 
-    console.log(`Polling-based monitoring started for: ${windowsScreenshotsPath}`);
-    
+    console.log(`Polling started (${pollingMs}ms) for: ${windowsScreenshotsPath}`);
     return true;
 }
 
 async function checkForNewScreenshots(windowsScreenshotsPath: string) {
     try {
-        // Efficient approach: find only the newest file instead of reading all files
-        let newestFile = null;
-        let newestTime = lastScreenshotCheck;
-        
-        const files = fs.readdirSync(windowsScreenshotsPath);
-        
-        // Iterate through files and track only the newest screenshot
-        for (const filename of files) {
-            if (filename.endsWith('.png') || filename.endsWith('.jpg') || filename.endsWith('.jpeg')) {
-                const fullPath = path.join(windowsScreenshotsPath, filename);
-                try {
-                    const stats = fs.statSync(fullPath);
-                    const mtime = stats.mtime.getTime();
-                    
-                    if (mtime > newestTime) {
-                        newestTime = mtime;
-                        newestFile = {
-                            name: filename,
-                            path: fullPath,
-                            mtime: mtime
-                        };
-                    }
-                } catch (statError) {
-                    // Skip files we can't stat (might be in use)
-                    continue;
-                }
-            }
-        }
+        // Single readdirSync — no stat calls. Compare filenames against known set.
+        const currentFiles = fs.readdirSync(windowsScreenshotsPath);
 
-        if (newestFile) {
-            console.log(`Found new screenshot: ${newestFile.name}`);
-            
-            // Update last check time to newest file
-            lastScreenshotCheck = newestFile.mtime;
-            
-            // Process the newest screenshot
-            await handleNewScreenshot(newestFile.path);
+        for (const filename of currentFiles) {
+            if (/\.(png|jpe?g)$/i.test(filename) && !knownFiles.has(filename)) {
+                knownFiles.add(filename);
+                const fullPath = path.join(windowsScreenshotsPath, filename);
+                await handleNewScreenshot(fullPath);
+            }
         }
     } catch (error) {
         console.error(`Error during polling check: ${error}`);
@@ -431,126 +396,66 @@ async function checkForNewScreenshots(windowsScreenshotsPath: string) {
 }
 
 async function handleNewScreenshot(filePath: string): Promise<void> {
-    // Skip if already processed
-    if (processedFiles.has(filePath)) {
-        return;
-    }
-    
-    // Check if file exists and is readable
     try {
-        if (!fs.existsSync(filePath)) {
-            return;
-        }
-        
+        // Verify file is ready (non-zero size)
         const stats = fs.statSync(filePath);
         if (!stats.isFile() || stats.size === 0) {
             return;
         }
-        
-        // Mark as processed
-        processedFiles.add(filePath);
-        
-        // Copy to WSL and update clipboard
-        const wslPath = await copyScreenshotToWSL(filePath);
-        if (wslPath) {
-            lastSavedImagePath = wslPath;
-        }
-        
+
+        await copyScreenshotToWSL(filePath);
     } catch (error) {
         console.error(`Error processing screenshot ${filePath}:`, error);
     }
 }
 
-function registerPasteInterceptor(context: vscode.ExtensionContext) {
-    // Register keybinding for Ctrl+V in terminal
-    const pasteCommand = vscode.commands.registerCommand('wslScreenSnipper.interceptPaste', async () => {
-        console.log(`Paste interceptor triggered. lastSavedImagePath: ${lastSavedImagePath}, activeTerminal: ${!!vscode.window.activeTerminal}`);
-        
-        const terminal = vscode.window.activeTerminal ?? vscode.window.terminals[0];
-        if (lastSavedImagePath && terminal) {
-            console.log(`Sending WSL path to terminal: ${lastSavedImagePath}`);
-            terminal.sendText(lastSavedImagePath, false);
-            vscode.window.showInformationMessage(`Pasted: ${lastSavedImagePath}`);
-        } else {
-            console.log(`Falling back to normal paste. lastSavedImagePath=${lastSavedImagePath}, terminals=${vscode.window.terminals.length}`);
-            await vscode.commands.executeCommand('workbench.action.terminal.paste');
-        }
-    });
-
-    context.subscriptions.push(pasteCommand);
-}
-
-
 function cleanup() {
     console.log('Starting extension cleanup...');
-    
-    // Stop file monitoring
-    if (fileWatcher) {
-        try {
-            fileWatcher.close();
-            fileWatcher = undefined;
-            console.log('File watcher closed');
-        } catch (error) {
-            console.error('Error closing file watcher:', error);
-        }
-    }
 
-    // Stop polling
-    if (pollingInterval) {
-        try {
-            clearInterval(pollingInterval);
-            pollingInterval = undefined;
-            console.log('Polling interval cleared');
-        } catch (error) {
-            console.error('Error clearing polling interval:', error);
-        }
-    }
+    stopMonitoring();
 
     // Dispose all registered disposables
-    try {
-        disposables.forEach((disposable, index) => {
-            try {
-                disposable.dispose();
-                console.log(`Disposed disposable ${index}`);
-            } catch (error) {
-                console.error(`Error disposing disposable ${index}:`, error);
-            }
-        });
-        disposables = [];
-        console.log('All disposables cleaned up');
-    } catch (error) {
-        console.error('Error during disposable cleanup:', error);
+    for (const d of disposables) {
+        try { d.dispose(); } catch {}
     }
+    disposables = [];
 
-    // Clear processed files set
-    processedFiles.clear();
-    console.log('Processed files cleared');
+    // Clean up old screenshots (keep today's)
+    const dirToClean = screenshotDir;
+    screenshotDir = undefined;
 
-    // Clean up temp directory
     const config = vscode.workspace.getConfiguration('wslScreenSnipper');
     const autoCleanup = config.get<boolean>('autoCleanup', true);
-    
-    if (autoCleanup && screenshotDir && fs.existsSync(screenshotDir)) {
+
+    if (autoCleanup && dirToClean && fs.existsSync(dirToClean)) {
+        const todayStart = new Date();
+        todayStart.setHours(0, 0, 0, 0);
+        const todayMs = todayStart.getTime();
+
         try {
-            // Force close any open file handles by waiting briefly
-            setTimeout(() => {
+            let remaining = 0;
+            for (const file of fs.readdirSync(dirToClean)) {
+                const filePath = path.join(dirToClean, file);
                 try {
-                    fs.rmSync(screenshotDir!, { recursive: true, force: true });
-                    console.log(`Cleaned up and removed screenshot directory: ${screenshotDir}`);
-                } catch (error) {
-                    console.error('Failed to cleanup screenshot directory:', error);
-                }
-            }, 100);
+                    const stats = fs.statSync(filePath);
+                    if (stats.isFile() && stats.mtime.getTime() < todayMs) {
+                        fs.unlinkSync(filePath);
+                        console.log(`Removed old screenshot: ${file}`);
+                    } else {
+                        remaining++;
+                    }
+                } catch {}
+            }
+            // Remove directory only if empty
+            if (remaining === 0) {
+                fs.rmdirSync(dirToClean);
+                console.log(`Removed empty screenshot directory: ${dirToClean}`);
+            }
         } catch (error) {
-            console.error('Failed to schedule cleanup of screenshot directory:', error);
+            console.error('Failed to cleanup screenshots:', error);
         }
     }
-    
-    // Reset global variables
-    screenshotDir = undefined;
-    lastSavedImagePath = undefined;
-    lastScreenshotCheck = 0;
-    
+
     console.log('Extension cleanup completed');
 }
 
